@@ -2,7 +2,7 @@ language: go
 go:
   - 1.x
 script:
-  - ./test.sh
+  - make test
 notifications:
   email: false
 sudo: false
