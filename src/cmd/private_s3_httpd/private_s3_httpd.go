@@ -1,6 +1,7 @@
 package main
 
 import (
+	"crypto/tls"
 	"flag"
 	"fmt"
 	"log"
@@ -10,6 +11,7 @@ import (
 	"time"
 
 	"github.com/aws/aws-sdk-go/aws"
+	awscred "github.com/aws/aws-sdk-go/aws/credentials"
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/s3"
 	"github.com/gorilla/handlers"
@@ -17,11 +19,13 @@ import (
 
 func main() {
 	showVersion := flag.Bool("version", false, "print version string")
-	listen := flag.String("listen", ":8080", "address:port to listen on.")
+	listen := flag.String("listen", ":8444", "address:port to listen on.")
 	bucket := flag.String("bucket", "", "S3 bucket name")
 	logRequests := flag.Bool("log-requests", true, "log HTTP requests")
-	region := flag.String("region", "us-east-1", "AWS S3 Region")
-	s3Endpoint := flag.String("s3-endpoint", "", "alternate http://address for accessing s3 (for configuring with minio.io)")
+	region := flag.String("region", "us-east-1", "S3 Region")
+	ak := flag.String("ak", "", "S3 access key")
+	sk := flag.String("sk", "", "S3 secret key")
+	s3Endpoint := flag.String("s3-endpoint", "", "S3 endpoint")
 	flag.Parse()
 
 	if *showVersion {
@@ -32,21 +36,33 @@ func main() {
 	if *bucket == "" {
 		log.Fatalf("bucket name required")
 	}
-
-	var svc *s3.S3
-	if *s3Endpoint != "" {
-		log.Printf("Using alternate S3 Endpoint diwht DisableSSL:true, S3ForcePathStyle:true %q", *s3Endpoint)
-		svc = s3.New(session.New(), &aws.Config{
-			Region:           region,
-			Endpoint:         s3Endpoint,
-			DisableSSL:       aws.Bool(true),
-			S3ForcePathStyle: aws.Bool(true),
-		})
-	} else {
-		svc = s3.New(session.New(), &aws.Config{
-			Region: region,
-		})
+	if *s3Endpoint == "" {
+		log.Fatal("s3 endpoint required")
 	}
+	if *ak == "" || *sk == "" {
+		log.Fatalf("ak and sk required")
+	}
+
+	log.Printf("Using alternate S3 Endpoint diwht DisableSSL:true, S3ForcePathStyle:true %q", *s3Endpoint)
+	creds := awscred.NewStaticCredentials(*ak, *sk, "")
+	sess, err := session.NewSession(&aws.Config{
+		HTTPClient: &http.Client{
+			Transport: &http.Transport{
+				TLSClientConfig: &tls.Config{
+					InsecureSkipVerify: true,
+				},
+			},
+		},
+		Region:           region,
+		Endpoint:         s3Endpoint,
+		Credentials:      creds,
+		DisableSSL:       aws.Bool(true),
+		S3ForcePathStyle: aws.Bool(true),
+	})
+	if err != nil {
+		log.Fatalf("Failed to create s3 session: %s", err)
+	}
+	svc := s3.New(sess)
 
 	var h http.Handler
 	h = &Proxy{

@@ -21,10 +21,14 @@ type Proxy struct {
 
 func (p *Proxy) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
 	key := req.URL.Path
+	if strings.HasPrefix(key, "/"+p.Bucket+"/") {
+		key = strings.TrimPrefix(key, "/"+p.Bucket+"/")
+	}
 	if strings.HasSuffix(key, "/") {
 		key = key + "index.html"
 	}
 
+	log.Printf("key: %s, bucket: %s\n", key, p.Bucket)
 	input := &s3.GetObjectInput{
 		Bucket: aws.String(p.Bucket),
 		Key:    aws.String(key),
@@ -32,11 +36,6 @@ func (p *Proxy) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
 	if v := req.Header.Get("If-None-Match"); v != "" {
 		input.IfNoneMatch = aws.String(v)
 	}
-
-	// awsReq, resp := p.Svc.GetObjectRequest(input)
-	// log.Printf("request: %#v", awsReq)
-	// err := awsReq.Send()
-	// log.Printf("response: %#v", )
 
 	var is304 bool
 	resp, err := p.Svc.GetObject(input)
